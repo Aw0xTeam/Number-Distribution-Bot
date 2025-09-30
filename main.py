@@ -10,8 +10,9 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 
+# Tabbatar cewa waɗannan suna aiki daidai
 from config import BOT_TOKEN, CHANNEL_ID, CHANNEL_LINK, ADMINS, OTP_GROUP_LINK, DB_PATH
-import db
+import db 
 
 # === Initialization ===
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -28,19 +29,28 @@ async def is_subscribed(user_id: int) -> bool:
         return False
 
 async def get_number_handler(target: types.Message | types.CallbackQuery):
-    """Handles the logic for displaying available countries and numbers."""
+    """Handles the logic for displaying available countries and numbers, ciki har da adadin."""
     user_id = target.from_user.id
+    # Saki lambar mai aiki idan akwai
     if db.get_active(user_id):
         old_number = db.get_active(user_id)[0]
         db.release_number(old_number)
         
+    countries_with_counts = {}
     with closing(sqlite3.connect(DB_PATH)) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT country FROM numbers WHERE used=0")
-        countries = [row[0] for row in cursor.fetchall()]
+        # Zabi dukkan kasashe tare da adadin lambobin da basu yi amfani ba (used=0)
+        cursor.execute("""
+            SELECT country, COUNT(number) 
+            FROM numbers 
+            WHERE used=0 
+            GROUP BY country
+        """)
+        # Ajiye bayanai a dictionary (misali: {'🇳🇬 Nigeria FB': 5000})
+        countries_with_counts = {row[0]: row[1] for row in cursor.fetchall()}
 
-    if not countries:
-        msg = "⚠️ No numbers available right now."
+    if not countries_with_counts:
+        msg = "⚠️ **No unused numbers available right now.** Please wait for the admin to upload new numbers."
         if isinstance(target, Message):
             await target.answer(msg)
         else:
@@ -48,11 +58,26 @@ async def get_number_handler(target: types.Message | types.CallbackQuery):
         return
 
     kb = InlineKeyboardBuilder()
-    for ctry in sorted(countries):
-        kb.button(text=ctry, callback_data=f"country:{ctry}")
+    # Ƙirƙirar maɓallin tare da ƙididdigar (count)
+    for ctry, count in sorted(countries_with_counts.items()):
+        # Idan adadin ya zama 0, kar ka nuna
+        if count > 0:
+            # Sabon rubutu: 🇳🇬 Nigeria FB (5000)
+            button_text = f"{ctry} ({count})"
+            # Callback_data ya kasance kamar da (misali: country:🇳🇬 Nigeria FB)
+            kb.button(text=button_text, callback_data=f"country:{ctry}")
+    
     kb.adjust(2)
+    
+    if not kb.buttons:
+        msg = "⚠️ **No unused numbers available right now.** Please wait for the admin to upload new numbers."
+        if isinstance(target, Message):
+            await target.answer(msg)
+        else:
+            await bot.send_message(target.from_user.id, msg)
+        return
 
-    text = "🌍 Select a country:"
+    text = "🌍 Select a country to get a number (Count = Available Numbers):"
     if isinstance(target, Message):
         await target.answer(text, reply_markup=kb.as_markup())
     else:
@@ -75,7 +100,9 @@ def active_keyboard():
 
 def otp_keyboard():
     kb = InlineKeyboardBuilder()
-    kb.button(text="🌍 Change Country", callback_data="get_number_action")
+    # Bayan an karɓi lamba, wannan 'Change Country' zai sake kira ga 'get_number_handler'
+    # wanda zai nuna sabon adadin da ya ragu.
+    kb.button(text="🌍 Change Country", callback_data="get_number_action") 
     kb.button(text="🔄 Change Number", callback_data="change_number_action")
     kb.button(text="📨 OTP Group", url=OTP_GROUP_LINK)
     kb.adjust(1)
@@ -136,8 +163,10 @@ async def change_number_handler(cb: CallbackQuery):
     await asyncio.sleep(3)
 
     old_number = active_number_data[0]
-    db.release_number(old_number)
+    # Saki tsohuwar lamba
+    db.release_number(old_number) 
 
+    # Karbi sabuwar lamba
     new_number_data = db.get_random_unused()
     if not new_number_data:
         await cb.message.edit_text(
@@ -150,8 +179,8 @@ async def change_number_handler(cb: CallbackQuery):
     db.set_active(user_id, new_number, new_country)
 
     await cb.message.edit_text(
-        f"📞 <b>Sabuwar Lambar Ku!</b>\n\n"
-        f"Danna don kwafa: <code>{new_number}</code>\n\n"
+        f"📞 **Sabuwar Lambar Ku!**\n\n"
+        f"Danna don kwafa: `{(new_number)}`\n\n"
         f"✅ Sabuwar lambar ku tana aiki!\n\n"
         f"❗️Ku shiga 'OTP Group' don ganin sakonni masu shigowa.",
         reply_markup=otp_keyboard()
@@ -161,16 +190,20 @@ async def change_number_handler(cb: CallbackQuery):
 async def select_country(cb: CallbackQuery):
     country = cb.data.split(":")[1]
     number_data = db.get_unused_number(country)
-    if not number_data:
-        await cb.message.edit_text(f"⚠️ No numbers left for {country}.")
+    
+    # Sake dubawa don tabbatar da akwai lamba (duk da cewa count ya nuna akwai)
+    if not number_data: 
+        await cb.message.edit_text(f"⚠️ **No unused number left for {country}.** Please try another country or press 'Change Country' to refresh.")
         return
 
     number = number_data[0]
-    db.set_active(cb.from_user.id, number, country)
+    
+    # Saita lambar a matsayin mai aiki da 'used=1'
+    db.set_active(cb.from_user.id, number, country) 
     
     await cb.message.edit_text(
-        f"📞 <b>Your Number is Ready!</b>\n\n"
-        f"Tap to copy: <code>{number}</code>\n\n"
+        f"📞 **Your Number is Ready!**\n\n"
+        f"Tap to copy: `{(number)}`\n\n"
         f"✅ Your number is active!\n\n"
         f"❗️Go to our OTP Group to see your incoming SMS.",
         reply_markup=otp_keyboard()
@@ -186,8 +219,8 @@ async def active_number(msg: Message):
     assigned_dt = datetime.fromisoformat(assigned_at)
     mins = int((datetime.now(timezone.utc) - assigned_dt.replace(tzinfo=timezone.utc)).total_seconds() // 60)
     await msg.answer(
-        f"📊 <b>Your Active Number</b>\n\n"
-        f"📞 Number: <code>{number}</code>\n"
+        f"📊 **Your Active Number**\n\n"
+        f"📞 Number: `{(number)}`\n"
         f"🌍 Country: {country}\n"
         f"🧭 Active for: {mins} minutes",
         reply_markup=active_keyboard()
