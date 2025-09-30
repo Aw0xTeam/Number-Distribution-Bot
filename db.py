@@ -30,6 +30,7 @@ def get_unused_number(country):
     """Retrieves an unused number for a given country."""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
+        # Yana dawo da lamba ɗaya wanda used=0
         cursor.execute("SELECT number FROM numbers WHERE country=? AND used=0 LIMIT 1", (country,))
         return cursor.fetchone()
 
@@ -41,24 +42,27 @@ def get_random_unused():
         return cursor.fetchone()
 
 def release_number(number):
-    """Marks a number as unused again."""
+    """Marks a number as unused again (used=0)."""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE numbers SET used=0 WHERE number=?", (number,))
         conn.commit()
 
 def set_active(user_id, number, country):
-    """Sets a number as active for a user."""
+    """
+    Sets a number as active for a user kuma yana alama lambar a matsayin used=1.
+    Wannan yana tabbatar da cewa baza'a sake bawa wani user lambar ba.
+    """
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # First, delete any existing active number for this user
+        # Da farko, share duk wata lamba mai aiki ga wannan user
         cursor.execute("DELETE FROM users WHERE user_id=?", (user_id,))
-        # Then, assign the new number
+        # Sannan, ba da sabuwar lamba
         cursor.execute(
             "INSERT INTO users (user_id, number, country, assigned_at) VALUES (?, ?, ?, ?)",
             (user_id, number, country, datetime.now(timezone.utc).isoformat())
         )
-        # Mark the number as used
+        # Sanya lambar a matsayin used=1
         cursor.execute("UPDATE numbers SET used=1 WHERE number=?", (number,))
         conn.commit()
 
@@ -74,6 +78,7 @@ def add_numbers(country, numbers):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         data = [(line.strip(), country) for line in numbers if line.strip()]
+        # INSERT OR IGNORE yana tabbatar da cewa baza'a kara lambar da take a DB ba
         cursor.executemany("INSERT OR IGNORE INTO numbers (number, country) VALUES (?, ?)", data)
         conn.commit()
         return cursor.rowcount
@@ -85,3 +90,4 @@ def delete_numbers(country):
         cursor.execute("DELETE FROM numbers WHERE country=?", (country,))
         conn.commit()
         return cursor.rowcount
+        
